@@ -1,0 +1,243 @@
+
+-- TARGET PLAYER SYSTEM
+-- Roblox Studio - LocalScript
+-- Place in StarterPlayer > StarterPlayerScripts
+
+local Players = game:GetService("Players")
+local UIS = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+
+local player = Players.LocalPlayer
+
+-- SETTINGS
+local MAX_DISTANCE = 350
+local TARGET_DISTANCE = 0.8
+
+local enabled = false
+local targetPlayer = nil
+local targetIndex = 0
+local followConnection = nil
+
+-- GUI
+local gui = Instance.new("ScreenGui")
+gui.Name = "TargetPlayerGUI"
+gui.ResetOnSpawn = false
+gui.Parent = player:WaitForChild("PlayerGui")
+
+local frame = Instance.new("Frame")
+frame.Size = UDim2.fromOffset(235, 125)
+frame.Position = UDim2.new(0, 25, 0.4, 0)
+frame.BackgroundColor3 = Color3.fromRGB(28, 30, 42)
+frame.Active = true
+frame.Draggable = true
+frame.Parent = gui
+
+local corner = Instance.new("UICorner")
+corner.CornerRadius = UDim.new(0, 12)
+corner.Parent = frame
+
+local title = Instance.new("TextLabel")
+title.Size = UDim2.new(1, -12, 0, 30)
+title.Position = UDim2.fromOffset(6, 4)
+title.BackgroundTransparency = 1
+title.Text = "TARGET PLAYER"
+title.TextColor3 = Color3.new(1, 1, 1)
+title.TextSize = 16
+title.Font = Enum.Font.GothamBold
+title.Parent = frame
+
+local status = Instance.new("TextLabel")
+status.Size = UDim2.new(1, -12, 0, 22)
+status.Position = UDim2.fromOffset(6, 32)
+status.BackgroundTransparency = 1
+status.Text = "Status: OFF"
+status.TextColor3 = Color3.fromRGB(190, 195, 210)
+status.TextSize = 12
+status.Font = Enum.Font.Gotham
+status.Parent = frame
+
+local toggle = Instance.new("TextButton")
+toggle.Size = UDim2.new(0.5, -12, 0, 35)
+toggle.Position = UDim2.fromOffset(8, 65)
+toggle.Text = "ON / OFF [G]"
+toggle.TextSize = 12
+toggle.Font = Enum.Font.GothamBold
+toggle.TextColor3 = Color3.new(1, 1, 1)
+toggle.BackgroundColor3 = Color3.fromRGB(65, 70, 90)
+toggle.Parent = frame
+
+local nextButton = Instance.new("TextButton")
+nextButton.Size = UDim2.new(0.5, -12, 0, 35)
+nextButton.Position = UDim2.new(0.5, 4, 0, 65)
+nextButton.Text = "NEXT [E]"
+nextButton.TextSize = 12
+nextButton.Font = Enum.Font.GothamBold
+nextButton.TextColor3 = Color3.new(1, 1, 1)
+nextButton.BackgroundColor3 = Color3.fromRGB(55, 100, 175)
+nextButton.Parent = frame
+
+for _, button in ipairs({toggle, nextButton}) do
+    local c = Instance.new("UICorner")
+    c.CornerRadius = UDim.new(0, 7)
+    c.Parent = button
+end
+
+-- GET PLAYERS WITHIN 350 STUDS
+local function getTargets()
+    local result = {}
+    local character = player.Character
+    local myRoot = character
+        and character:FindFirstChild("HumanoidRootPart")
+
+    if not myRoot then
+        return result
+    end
+
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= player and p.Character then
+            local root = p.Character:FindFirstChild("HumanoidRootPart")
+            local hum = p.Character:FindFirstChildOfClass("Humanoid")
+
+            if root and hum and hum.Health > 0 then
+                local distance = (myRoot.Position - root.Position).Magnitude
+
+                if distance <= MAX_DISTANCE then
+                    table.insert(result, p)
+                end
+            end
+        end
+    end
+
+    table.sort(result, function(a, b)
+        return a.UserId < b.UserId
+    end)
+
+    return result
+end
+
+-- SELECT TARGET
+local function chooseTarget()
+    local targets = getTargets()
+
+    if #targets == 0 then
+        targetPlayer = nil
+        title.Text = "TARGET PLAYER"
+        status.Text = "No target within 350 studs"
+        return false
+    end
+
+    local currentIndex = 0
+
+    for i, p in ipairs(targets) do
+        if p == targetPlayer then
+            currentIndex = i
+            break
+        end
+    end
+
+    targetIndex = currentIndex % #targets + 1
+    targetPlayer = targets[targetIndex]
+
+    title.Text = "TARGET: " .. targetPlayer.Name
+    status.Text = "Range: 350 studs"
+    return true
+end
+
+local function stopFollowing()
+    if followConnection then
+        followConnection:Disconnect()
+        followConnection = nil
+    end
+end
+
+-- TOGGLE TARGET MODE
+local function setEnabled(state)
+    enabled = state
+    stopFollowing()
+
+    if not enabled then
+        targetPlayer = nil
+        title.Text = "TARGET PLAYER"
+        status.Text = "Status: OFF"
+        toggle.BackgroundColor3 = Color3.fromRGB(65, 70, 90)
+        return
+    end
+
+    toggle.BackgroundColor3 = Color3.fromRGB(40, 155, 95)
+
+    if not chooseTarget() then
+        status.Text = "No target within 350 studs"
+        return
+    end
+
+    followConnection = RunService.Heartbeat:Connect(function()
+        if not enabled then return end
+
+        local character = player.Character
+        local myRoot = character
+            and character:FindFirstChild("HumanoidRootPart")
+
+        local targetCharacter = targetPlayer and targetPlayer.Character
+        local targetRoot = targetCharacter
+            and targetCharacter:FindFirstChild("HumanoidRootPart")
+        local targetHumanoid = targetCharacter
+            and targetCharacter:FindFirstChildOfClass("Humanoid")
+
+        if not myRoot or not targetRoot
+            or not targetHumanoid or targetHumanoid.Health <= 0 then
+            chooseTarget()
+            return
+        end
+
+        local distance = (myRoot.Position - targetRoot.Position).Magnitude
+
+        -- Stop targeting players outside the range
+        if distance > MAX_DISTANCE then
+            if not chooseTarget() then
+                targetPlayer = nil
+                status.Text = "No target within 350 studs"
+            end
+            return
+        end
+
+        -- Keep the character very close to the target.
+        -- This client-side movement is intended for Studio testing.
+        local offset = targetRoot.CFrame.RightVector * TARGET_DISTANCE
+        myRoot.AssemblyLinearVelocity = Vector3.zero
+        myRoot.AssemblyAngularVelocity = Vector3.zero
+        myRoot.CFrame = CFrame.lookAt(
+            targetRoot.Position + offset,
+            targetRoot.Position
+        )
+    end)
+end
+
+local function nextTarget()
+    if not enabled then return end
+    chooseTarget()
+end
+
+toggle.MouseButton1Click:Connect(function()
+    setEnabled(not enabled)
+end)
+
+nextButton.MouseButton1Click:Connect(nextTarget)
+
+UIS.InputBegan:Connect(function(input, processed)
+    if processed then return end
+
+    if input.KeyCode == Enum.KeyCode.G then
+        setEnabled(not enabled)
+    elseif input.KeyCode == Enum.KeyCode.E then
+        nextTarget()
+    end
+end)
+
+player.CharacterAdded:Connect(function()
+    if enabled then
+        task.wait(1)
+        if enabled then
+            setEnabled(true)
+        end
+    end
+end)
