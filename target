@@ -228,7 +228,7 @@ UIS.InputBegan:Connect(function(input, processed)
 
     if input.KeyCode == Enum.KeyCode.G then
         setEnabled(not enabled)
-    elseif input.KeyCode == Enum.KeyCode.Q then
+    elseif input.KeyCode == Enum.KeyCode.E then
         nextTarget()
     end
 end)
